@@ -15,6 +15,13 @@ struct BatteryHealth: Equatable, Sendable {
     var amperage: Int?
     /// Temperature in degrees Celsius, if the machine reports it.
     var temperatureCelsius: Double?
+    /// The charger's reason for not charging (a bit mask), or `nil` if not
+    /// reported. Nonzero while external power is connected and the charge is
+    /// being held below full.
+    var notChargingReason: Int?
+
+    /// Whether the charger reports that it is deliberately not charging.
+    var isChargeHeld: Bool { (notChargingReason ?? 0) != 0 }
 
     /// Full-charge capacity as a percentage of the design capacity, which is
     /// what System Settings calls "Maximum Capacity".
@@ -34,6 +41,8 @@ struct BatteryHealth: Equatable, Sendable {
     static func parse(_ props: [String: Any]) -> BatteryHealth {
         var h = BatteryHealth()
         let data = props["BatteryData"] as? [String: Any] ?? [:]
+        let charger = props["ChargerData"] as? [String: Any] ?? [:]
+        h.notChargingReason = int(charger["NotChargingReason"])
         h.cycleCount = int(props["CycleCount"])
         h.designCapacity = int(data["DesignCapacity"]) ?? int(props["DesignCapacity"])
         h.fullChargeCapacity = int(data["FullChargeCapacity"]) ?? int(props["AppleRawMaxCapacity"])

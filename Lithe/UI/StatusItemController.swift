@@ -39,7 +39,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if let button = statusItem.button {
             button.imagePosition = .imageLeading
             button.imageHugsTitle = true
-            button.font = BatteryIconRenderer.menuBarFont()
         }
 
         let box = weakSelf
@@ -57,7 +56,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             .dropFirst()
             .removeDuplicates()
             .sink { [weak self] settings in
-                self?.render(settings: settings)
+                guard let self else { return }
+                self.render(settings: settings)
+                self.checkLowBattery(snapshot: self.monitor.snapshot, settings: settings)
             }
             .store(in: &cancellables)
         monitor.start()
@@ -101,15 +102,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let item = items[0]
             button.image = item.icon.map(BatteryIconRenderer.image(for:))
             if let text = item.text {
-                switch item.textColor {
-                case .automatic, .dimmed:
-                    // A plain title gets the system's menu bar text styling.
-                    button.title = text
-                case .custom:
-                    button.attributedTitle = NSAttributedString(string: text, attributes: [
-                        .font: BatteryIconRenderer.menuBarFont(),
-                        .foregroundColor: BatteryIconRenderer.nsColor(item.textColor),
-                    ])
+                // A plain title gets the system's menu bar font and layout;
+                // a custom color is added on top of that same styling so the
+                // text does not change size when the color changes.
+                button.title = text
+                if case .custom = item.textColor {
+                    let styled = NSMutableAttributedString(attributedString: button.attributedTitle)
+                    styled.addAttribute(.foregroundColor, value: BatteryIconRenderer.nsColor(item.textColor),
+                                        range: NSRange(location: 0, length: styled.length))
+                    button.attributedTitle = styled
                 }
             } else {
                 button.title = ""
@@ -122,22 +123,36 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 button.imagePosition = .imageLeading
             }
         } else {
-            button.image = BatteryIconRenderer.composedImage(items: items)
+            button.image = BatteryIconRenderer.composedImage(items: items, font: Self.titleFont(of: button))
             button.title = ""
             button.imagePosition = .imageOnly
         }
     }
 
+    /// The font the status bar button uses for a plain title, so composed
+    /// images match the system's menu bar text.
+    private static func titleFont(of button: NSStatusBarButton) -> NSFont {
+        let hadTitle = button.title
+        if hadTitle.isEmpty { button.title = "0" }
+        let font = button.attributedTitle.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+        button.title = hadTitle
+        return font ?? BatteryIconRenderer.menuBarFont()
+    }
+
     private func checkLowBattery(snapshot: PowerSnapshot, settings: DisplaySettings) {
         let primary = snapshot.sources.first { $0.isPresent && $0.kind == .internalBattery }
             ?? snapshot.sources.first { $0.isPresent }
-        guard let battery = primary, battery.state == .onBattery, let percent = battery.percent else {
-            // Plugged in (or no battery): reset so the next discharge warns again.
+        guard let battery = primary, battery.state == .onBattery, let percent = battery.percent,
+              settings.warningPanelEnabled else {
+            // Plugged in, no battery, or warnings turned off: take the panel
+            // down if this code put it up, and re-arm for the next discharge.
+            if warnedForThisDischarge {
+                lowBatteryAlert.dismiss()
+            }
             warnedForThisDischarge = false
-            lowBatteryAlert.dismiss()
             return
         }
-        if settings.warningPanelEnabled, percent < settings.warningPanelPercent {
+        if percent < settings.warningPanelPercent {
             if !warnedForThisDischarge {
                 warnedForThisDischarge = true
                 lowBatteryAlert.show(percent: percent, minutes: battery.minutesToEmpty, playSound: settings.warningSoundEnabled)
@@ -168,10 +183,20 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         battery.target = self
         menu.addItem(battery)
 
+        loginItem.refresh()
         let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         login.target = self
-        loginItem.refresh()
-        login.state = loginItem.isEnabled ? .on : .off
+        if loginItem.isTranslocated {
+            // A quarantined app running from a translocated copy cannot be
+            // registered at a stable path; the preferences window explains.
+            login.isEnabled = false
+            login.toolTip = "Move Lithe to your Applications folder and open it again to enable this."
+        } else if loginItem.requiresApproval {
+            login.state = .mixed
+            login.title = "Launch at Login (needs approval in System Settings)"
+        } else {
+            login.state = loginItem.isEnabled ? .on : .off
+        }
         menu.addItem(login)
         menu.addItem(.separator())
 
@@ -240,6 +265,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleLaunchAtLogin() {
+        if loginItem.requiresApproval {
+            loginItem.openSystemSettings()
+            return
+        }
         loginItem.setEnabled(!loginItem.isEnabled)
         if let error = loginItem.lastError {
             NSApp.activate()
@@ -252,9 +281,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func showAbout() {
         NSApp.activate()
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .credits: NSAttributedString(string: "A slim battery meter for the menu bar.\nhttps://github.com/asmeurer/Lithe"),
-        ])
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: Self.aboutCredits()])
+    }
+
+    static func aboutCredits() -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        let credits = NSMutableAttributedString(string: "A slim battery meter for the menu bar.\n", attributes: [.font: font])
+        let link = NSAttributedString(string: AppInfo.repositoryURL.absoluteString,
+                                      attributes: [.font: font, .link: AppInfo.repositoryURL])
+        credits.append(link)
+        return credits
     }
 
     @objc private func openRepository() {
@@ -276,6 +312,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     private func askRemoveOnceOrForever(alreadyHidden: Bool) {
+        loginItem.refresh()
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Remove Lithe from the menu bar?"
@@ -296,8 +333,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 changingVisibility = false
             }
         case .alertSecondButtonReturn:
-            if loginItem.isEnabled {
-                loginItem.setEnabled(false)
+            // Unregister unconditionally: the cached status may be stale, and
+            // unregistering an item that is not registered is harmless.
+            loginItem.setEnabled(false)
+            if let error = loginItem.lastError {
+                NSLog("Lithe: could not remove the login item: \(error)")
+                let failed = NSAlert()
+                failed.messageText = "Lithe could not remove itself from your login items"
+                failed.informativeText = "\(error)\n\nLithe will quit now. If it comes back after your next login, remove it in System Settings > General > Login Items."
+                failed.runModal()
             }
             NSApp.terminate(nil)
         default:

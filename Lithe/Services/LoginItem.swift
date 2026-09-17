@@ -37,6 +37,11 @@ final class LoginItem: ObservableObject {
             }
         }
         refresh()
+        // The status is the truth: if the system now agrees with what was
+        // asked for, whatever was thrown was not a real failure.
+        if isEnabled == enabled {
+            lastError = nil
+        }
     }
 
     func openSystemSettings() {

@@ -1,6 +1,6 @@
 # XcodeGen project specification. Regenerate Lithe.xcodeproj with `make project`
-# (requires `brew install xcodegen`). The generated project is committed so that
-# contributors do not need xcodegen just to open the project in Xcode.
+# (requires `brew install xcodegen`). The generated project is gitignored; this
+# file is the source of truth for targets and build settings.
 name: Lithe
 options:
   bundleIdPrefix: com.github.asmeurer

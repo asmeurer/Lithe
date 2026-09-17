@@ -12,7 +12,11 @@ enum PowerSourceParser {
     /// Sentinel used by IOKit for "still calculating" time estimates.
     static let timeUnknown = -1
 
-    static func parse(_ dict: [String: Any]) -> PowerSource {
+    /// - Parameter chargeHeld: Whether the charger reports a "not charging"
+    ///   reason (from the I/O Registry, see `BatteryHealth.isChargeHeld`).
+    ///   The power source dictionary itself does not say why a battery on
+    ///   external power is not charging.
+    static func parse(_ dict: [String: Any], chargeHeld: Bool = false) -> PowerSource {
         let name = dict[kIOPSNameKey] as? String ?? "Battery"
         let kind: PowerSourceKind
         switch dict[kIOPSTypeKey] as? String {
@@ -45,7 +49,11 @@ enum PowerSourceParser {
         let minutesToFull = minutes(dict[kIOPSTimeToFullChargeKey])
 
         let condition = dict[kIOPSBatteryHealthConditionKey] as? String ?? dict[kIOPSBatteryHealthKey] as? String
-        let optimized = dict["Optimized Battery Charging Engaged"] as? Bool ?? false
+        let percent = charge.map { Int(($0 * 100).rounded()) }
+        // Older systems published this key; current ones do not, so the
+        // charger's "not charging reason" from the registry is the fallback.
+        let publishedOnHold = dict["Optimized Battery Charging Engaged"] as? Bool ?? false
+        let onHold = publishedOnHold || (chargeHeld && state == .charged && !isCharged && (percent ?? 100) < 100)
 
         return PowerSource(
             name: name,
@@ -57,7 +65,7 @@ enum PowerSourceParser {
             minutesToFull: state == .charging ? minutesToFull : nil,
             isCharged: isCharged,
             healthCondition: condition,
-            optimizedChargingEngaged: optimized
+            chargeOnHold: onHold
         )
     }
 

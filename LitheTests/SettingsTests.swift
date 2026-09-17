@@ -16,13 +16,35 @@ struct DisplaySettingsCodingTests {
         #expect(back == s)
     }
 
-    @Test func rgbaHexRoundTrip() {
+    @Test func decodingToleratesMissingAndUnknownFields() throws {
+        // A settings blob from a future or past version: one key missing,
+        // one enum with an unknown raw value, one field of the wrong type,
+        // and one unknown key. Everything else must survive.
+        let json = """
+        {"onBatteryMode": 5, "chargingMode": 99, "shape": "round", "lowColorPercent": 33,
+         "warningPanelEnabled": false, "someFutureSetting": true,
+         "chargedColor": {"custom": {"_0": {"red": 0.1, "green": 0.2, "blue": 0.3, "alpha": 1}}}}
+        """
+        let s = try JSONDecoder().decode(DisplaySettings.self, from: Data(json.utf8))
+        let d = DisplaySettings()
+        #expect(s.onBatteryMode == .time)
+        #expect(s.chargingMode == d.chargingMode)
+        #expect(s.shape == d.shape)
+        #expect(s.lowColorPercent == 33)
+        #expect(!s.warningPanelEnabled)
+        #expect(s.chargedColor == .custom(RGBA(red: 0.1, green: 0.2, blue: 0.3, alpha: 1)))
+        #expect(s.chargedMode == d.chargedMode)
+        #expect(s.warningPanelPercent == d.warningPanelPercent)
+        #expect(try JSONDecoder().decode(DisplaySettings.self, from: Data("{}".utf8)) == d)
+    }
+
+    @Test func rgbaHexRoundTrip() throws {
         let c = RGBA(red: 1, green: 0.5, blue: 0, alpha: 1)
         #expect(c.hex == "#FF8000FF")
-        let parsed = try! #require(RGBA(hex: "#FF8000FF"))
+        let parsed = try #require(RGBA(hex: "#FF8000FF"))
         #expect(parsed.hex == c.hex)
         #expect(abs(parsed.green - c.green) < 1.0 / 255)
-        let short = try! #require(RGBA(hex: "336699"))
+        let short = try #require(RGBA(hex: "336699"))
         #expect(short.alpha == 1)
         #expect(abs(short.red - 0.2) < 0.001)
         #expect(RGBA(hex: "nope") == nil)
@@ -96,30 +118,66 @@ struct LegacyImportTests {
 
 @MainActor
 struct PreferencesStoreTests {
-    private func freshDefaults() -> UserDefaults {
+    /// A throwaway defaults domain, removed again when the test ends so that
+    /// no plist files pile up in ~/Library/Preferences.
+    private func withFreshDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         let name = "com.github.asmeurer.Lithe.tests.\(UUID().uuidString)"
         let d = UserDefaults(suiteName: name)!
-        d.removePersistentDomain(forName: name)
-        return d
+        defer { d.removePersistentDomain(forName: name) }
+        try body(d)
     }
 
     @Test func persistsAndReloads() {
-        let defaults = freshDefaults()
-        let prefs = Preferences(defaults: defaults)
-        #expect(prefs.settings == DisplaySettings())
-        prefs.settings.shape = .horizontal
-        prefs.settings.warningPanelPercent = 15
-        let reloaded = Preferences(defaults: defaults)
-        #expect(reloaded.settings.shape == .horizontal)
-        #expect(reloaded.settings.warningPanelPercent == 15)
-        reloaded.resetToDefaults()
-        #expect(Preferences(defaults: defaults).settings == DisplaySettings())
+        withFreshDefaults { defaults in
+            let prefs = Preferences(defaults: defaults)
+            #expect(prefs.settings == DisplaySettings())
+            prefs.settings.shape = .horizontal
+            prefs.settings.warningPanelPercent = 15
+            let reloaded = Preferences(defaults: defaults)
+            #expect(reloaded.settings.shape == .horizontal)
+            #expect(reloaded.settings.warningPanelPercent == 15)
+            reloaded.resetToDefaults()
+            #expect(Preferences(defaults: defaults).settings == DisplaySettings())
+        }
     }
 
     @Test func ignoresCorruptSavedSettings() {
-        let defaults = freshDefaults()
-        defaults.set(Data("not json".utf8), forKey: Preferences.settingsKey)
-        let prefs = Preferences(defaults: defaults)
-        #expect(prefs.settings == DisplaySettings())
+        withFreshDefaults { defaults in
+            defaults.set(Data("not json".utf8), forKey: Preferences.settingsKey)
+            let prefs = Preferences(defaults: defaults)
+            #expect(prefs.settings == DisplaySettings())
+            // Reset discards the unreadable blob even though nothing changed.
+            prefs.resetToDefaults()
+            #expect(defaults.data(forKey: Preferences.settingsKey) == nil)
+        }
+    }
+
+    @Test func legacyImportRunsOnceAndOnlyWithoutSavedSettings() {
+        withFreshDefaults { defaults in
+            let prefs = Preferences(defaults: defaults)
+            #expect(prefs.importLegacySettingsIfNeeded(legacy: LegacyImportTests.legacy))
+            #expect(prefs.settings.onBatteryMode == .iconAndTime)
+            #expect(prefs.settings.lowColorPercent == 25)
+            // Second launch: never again, even with different legacy values.
+            var other = LegacyImportTests.legacy
+            other["CMHDrainingOption"] = 5
+            #expect(!prefs.importLegacySettingsIfNeeded(legacy: other))
+            #expect(prefs.settings.onBatteryMode == .iconAndTime)
+        }
+        withFreshDefaults { defaults in
+            // Lithe already has settings of its own: nothing is imported.
+            let first = Preferences(defaults: defaults)
+            first.settings.shape = .thin
+            let prefs = Preferences(defaults: defaults)
+            #expect(!prefs.importLegacySettingsIfNeeded(legacy: LegacyImportTests.legacy))
+            #expect(prefs.settings.shape == .thin)
+            #expect(prefs.settings.onBatteryMode == DisplaySettings().onBatteryMode)
+        }
+        withFreshDefaults { defaults in
+            // No SlimBatteryMonitor preferences at all.
+            let prefs = Preferences(defaults: defaults)
+            #expect(!prefs.importLegacySettingsIfNeeded(legacy: [:]))
+            #expect(prefs.settings == DisplaySettings())
+        }
     }
 }

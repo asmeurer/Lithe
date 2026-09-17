@@ -138,9 +138,12 @@ struct StatusPresentation: Equatable, Sendable {
                 line = "Charging (\(pct))"
             }
         case .charged:
-            if source.isCharged || source.percent == 100 {
+            if source.percent == 100 || (source.isCharged && source.percent == nil) {
                 line = "Fully charged"
-            } else if source.optimizedChargingEngaged {
+            } else if source.isCharged {
+                // macOS reports "charged" from about 95% up.
+                line = "Charged (\(pct))"
+            } else if source.chargeOnHold {
                 line = "Charging on hold (\(pct))"
             } else {
                 line = "On external power, not charging (\(pct))"

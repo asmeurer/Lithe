@@ -15,7 +15,7 @@ struct SettingsView: View {
             GeneralTab(prefs: prefs, loginItem: loginItem)
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
-        .frame(width: 500, height: 540)
+        .frame(minWidth: 500, idealWidth: 500, minHeight: 560, idealHeight: 720)
     }
 }
 
@@ -42,12 +42,11 @@ struct DisplayTab: View {
                 Toggle("Reverse the order of multiple batteries", isOn: $settings.reverseOrder)
             }
             Section("Warnings") {
-                HStack {
-                    Toggle("Show a warning panel when the charge drops below", isOn: $settings.warningPanelEnabled)
-                    Spacer()
+                Toggle("Show a warning panel when the charge is low", isOn: $settings.warningPanelEnabled)
+                LabeledContent("Warn when the charge drops below:") {
                     PercentStepper(value: $settings.warningPanelPercent)
-                        .disabled(!settings.warningPanelEnabled)
                 }
+                .disabled(!settings.warningPanelEnabled)
                 Toggle("Play a sound with the warning", isOn: $settings.warningSoundEnabled)
                     .disabled(!settings.warningPanelEnabled)
             }
@@ -82,22 +81,23 @@ struct AppearanceTab: View {
                 }
             }
             Section("Colors") {
-                ColorSettingRow(title: "On battery:", setting: $settings.onBatteryColor, fallback: RGBA(red: 0, green: 0, blue: 0))
+                ColorSettingRow(title: "On battery:", setting: $settings.onBatteryColor, fallback: .currentLabel)
                 ColorSettingRow(title: "Charging:", setting: $settings.chargingColor, fallback: .orange)
                 ColorSettingRow(title: "Charged:", setting: $settings.chargedColor, fallback: .green)
-                ColorSettingRow(title: "Outline and text:", setting: $settings.outlineColor, fallback: RGBA(red: 0, green: 0, blue: 0))
+                ColorSettingRow(title: "Outline and text:", setting: $settings.outlineColor, fallback: .currentLabel)
                 Text("Automatic colors follow the menu bar, so they stay readable on light and dark backgrounds.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
             Section("Low charge") {
-                HStack {
-                    Toggle("Use a warning color when the charge is below", isOn: $settings.lowColorEnabled)
-                    Spacer()
+                Toggle("Use a warning color when the charge is low", isOn: $settings.lowColorEnabled)
+                LabeledContent("Use it when the charge drops below:") {
                     PercentStepper(value: $settings.lowColorPercent)
-                        .disabled(!settings.lowColorEnabled)
                 }
-                ColorSettingRow(title: "Warning color:", setting: $settings.lowColor, fallback: .red)
+                .disabled(!settings.lowColorEnabled)
+                // An automatic warning color would look like the normal
+                // color, so this one is always a chosen color.
+                ColorSettingRow(title: "Warning color:", setting: $settings.lowColor, fallback: .red, allowsAutomatic: false)
                     .disabled(!settings.lowColorEnabled)
             }
         }
@@ -143,22 +143,34 @@ struct PreviewStrip: View {
 struct ColorSettingRow: View {
     let title: String
     @Binding var setting: ColorSetting
-    /// The color to start from when switching from automatic to custom.
+    /// The color to start from when switching from automatic to custom (for
+    /// the first time; afterwards the last chosen color is restored).
     let fallback: RGBA
+    var allowsAutomatic: Bool = true
+    @State private var lastCustom: RGBA?
 
     var body: some View {
         LabeledContent(title) {
             HStack(spacing: 12) {
                 ColorPicker("", selection: Binding(
-                    get: { Color(rgba: setting.customColor ?? fallback) },
+                    get: { Color(rgba: setting.customColor ?? lastCustom ?? fallback) },
                     set: { setting = .custom(RGBA(color: $0)) }
                 ), supportsOpacity: false)
                 .labelsHidden()
                 .disabled(setting.isAutomatic)
-                Toggle("Automatic", isOn: Binding(
-                    get: { setting.isAutomatic },
-                    set: { setting = $0 ? .automatic : .custom(setting.customColor ?? fallback) }
-                ))
+                if allowsAutomatic {
+                    Toggle("Automatic", isOn: Binding(
+                        get: { setting.isAutomatic },
+                        set: { automatic in
+                            if automatic {
+                                lastCustom = setting.customColor
+                                setting = .automatic
+                            } else {
+                                setting = .custom(lastCustom ?? fallback)
+                            }
+                        }
+                    ))
+                }
             }
         }
     }
@@ -249,7 +261,22 @@ extension Color {
 
 extension RGBA {
     init(color: Color) {
-        let ns = NSColor(color).usingColorSpace(.sRGB) ?? .black
+        self.init(nsColor: NSColor(color))
+    }
+
+    init(nsColor: NSColor) {
+        let ns = nsColor.usingColorSpace(.sRGB) ?? .black
         self.init(red: Double(ns.redComponent), green: Double(ns.greenComponent), blue: Double(ns.blueComponent), alpha: Double(ns.alphaComponent))
+    }
+
+    /// The label color as currently resolved for the app's appearance, so a
+    /// color that starts out as "custom" is at least visible.
+    @MainActor
+    static var currentLabel: RGBA {
+        var resolved = NSColor.labelColor
+        NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
+            resolved = NSColor.labelColor.usingColorSpace(.sRGB) ?? .black
+        }
+        return RGBA(nsColor: resolved)
     }
 }

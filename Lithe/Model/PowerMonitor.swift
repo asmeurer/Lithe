@@ -97,11 +97,15 @@ final class PowerMonitor {
         var providing = kIOPSACPowerValue
         if let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() {
             if let list = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [Any] {
+                // The registry knows whether the charger is holding the
+                // charge; the power source dictionary does not.
+                let chargeHeld = BatteryHealth.read()?.isChargeHeld ?? false
                 for entry in list {
                     // `Get`, not `Copy`: the dictionary is owned by the blob.
                     if let description = IOPSGetPowerSourceDescription(blob, entry as CFTypeRef)?
                         .takeUnretainedValue() as? [String: Any] {
-                        sources.append(PowerSourceParser.parse(description))
+                        let isInternal = description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType
+                        sources.append(PowerSourceParser.parse(description, chargeHeld: chargeHeld && isInternal))
                     }
                 }
             }

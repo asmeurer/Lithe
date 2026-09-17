@@ -71,6 +71,31 @@ struct PowerSourceParserTests {
         #expect(s.minutesToEmpty == nil)
     }
 
+    @Test func chargeHeldComesFromTheRegistryHint() {
+        // The dictionary alone cannot tell "on hold" from "not charging".
+        let plain = PowerSourceParser.parse(Self.onACNotCharging)
+        #expect(!plain.chargeOnHold)
+        let held = PowerSourceParser.parse(Self.onACNotCharging, chargeHeld: true)
+        #expect(held.chargeOnHold)
+        #expect(held.state == .charged)
+
+        // Not "on hold" when actually charging, charged, or full.
+        var charging = Self.onACNotCharging
+        charging["Is Charging"] = true
+        #expect(!PowerSourceParser.parse(charging, chargeHeld: true).chargeOnHold)
+        var full = Self.onACNotCharging
+        full["Current Capacity"] = 100
+        #expect(!PowerSourceParser.parse(full, chargeHeld: true).chargeOnHold)
+        var charged = Self.onACNotCharging
+        charged["Is Charged"] = true
+        #expect(!PowerSourceParser.parse(charged, chargeHeld: true).chargeOnHold)
+
+        // The legacy key still counts if a system publishes it.
+        var published = Self.onACNotCharging
+        published["Optimized Battery Charging Engaged"] = true
+        #expect(PowerSourceParser.parse(published).chargeOnHold)
+    }
+
     @Test func parsesFullyCharged() {
         var d = Self.onACNotCharging
         d["Is Charged"] = true
@@ -139,7 +164,7 @@ struct PowerSourceParserTests {
 }
 
 struct BatteryHealthTests {
-    @Test func parsesAppleSiliconRegistry() {
+    @Test func parsesAppleSiliconRegistry() throws {
         let props: [String: Any] = [
             "CycleCount": 32,
             "Voltage": 12232,
@@ -149,14 +174,20 @@ struct BatteryHealthTests {
                 "FullChargeCapacity": 8117,
                 "NominalChargeCapacity": 8361,
             ],
+            "ChargerData": [
+                "IsCharging": 0,
+                "NotChargingReason": 16777216,
+            ],
         ]
         let h = BatteryHealth.parse(props)
         #expect(h.cycleCount == 32)
+        #expect(h.notChargingReason == 16777216)
+        #expect(h.isChargeHeld)
         #expect(h.designCapacity == 8579)
         #expect(h.fullChargeCapacity == 8117)
         #expect(h.maximumCapacityPercent == 94)
         #expect(h.temperatureCelsius == nil)
-        let watts = try! #require(h.watts)
+        let watts = try #require(h.watts)
         #expect(abs(watts - (-18.348)) < 0.001)
     }
 
@@ -171,6 +202,7 @@ struct BatteryHealthTests {
         #expect(h.maximumCapacityPercent == 80)
         #expect(h.temperatureCelsius == 30.11)
         #expect(h.watts == nil)
+        #expect(!h.isChargeHeld)
     }
 }
 

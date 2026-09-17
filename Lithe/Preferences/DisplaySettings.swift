@@ -152,6 +152,35 @@ struct DisplaySettings: Codable, Equatable, Sendable {
 
     init() {}
 
+    /// Decodes leniently: a missing key, an unknown enum value, or a field of
+    /// the wrong type falls back to the default for that one setting instead
+    /// of discarding all saved settings. This keeps preferences across
+    /// upgrades and downgrades that add or rename fields.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = DisplaySettings()
+        func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            (try? c.decodeIfPresent(T.self, forKey: key)) ?? nil ?? fallback
+        }
+        onBatteryMode = value(.onBatteryMode, d.onBatteryMode)
+        chargingMode = value(.chargingMode, d.chargingMode)
+        chargedMode = value(.chargedMode, d.chargedMode)
+        showRemovedBattery = value(.showRemovedBattery, d.showRemovedBattery)
+        showUPS = value(.showUPS, d.showUPS)
+        reverseOrder = value(.reverseOrder, d.reverseOrder)
+        shape = value(.shape, d.shape)
+        onBatteryColor = value(.onBatteryColor, d.onBatteryColor)
+        chargingColor = value(.chargingColor, d.chargingColor)
+        chargedColor = value(.chargedColor, d.chargedColor)
+        outlineColor = value(.outlineColor, d.outlineColor)
+        lowColorEnabled = value(.lowColorEnabled, d.lowColorEnabled)
+        lowColorPercent = value(.lowColorPercent, d.lowColorPercent)
+        lowColor = value(.lowColor, d.lowColor)
+        warningPanelEnabled = value(.warningPanelEnabled, d.warningPanelEnabled)
+        warningPanelPercent = value(.warningPanelPercent, d.warningPanelPercent)
+        warningSoundEnabled = value(.warningSoundEnabled, d.warningSoundEnabled)
+    }
+
     func mode(for state: PowerState) -> DisplayMode {
         switch state {
         case .onBattery: return onBatteryMode

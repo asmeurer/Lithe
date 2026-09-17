@@ -45,8 +45,9 @@ struct PowerSource: Equatable, Sendable {
     /// Battery condition as reported by IOKit, e.g. "Good", "Fair", "Poor", or
     /// `nil` when not reported.
     var healthCondition: String?
-    /// Whether Optimized Battery Charging is currently holding the charge.
-    var optimizedChargingEngaged: Bool
+    /// Whether charging is being held below full by the system (Optimized
+    /// Battery Charging or a charge limit) while external power is connected.
+    var chargeOnHold: Bool
 
     init(
         name: String = "Battery",
@@ -58,7 +59,7 @@ struct PowerSource: Equatable, Sendable {
         minutesToFull: Int? = nil,
         isCharged: Bool = false,
         healthCondition: String? = nil,
-        optimizedChargingEngaged: Bool = false
+        chargeOnHold: Bool = false
     ) {
         self.name = name
         self.kind = kind
@@ -69,7 +70,7 @@ struct PowerSource: Equatable, Sendable {
         self.minutesToFull = minutesToFull
         self.isCharged = isCharged
         self.healthCondition = healthCondition
-        self.optimizedChargingEngaged = optimizedChargingEngaged
+        self.chargeOnHold = chargeOnHold
     }
 
     /// Charge as a whole percentage in `0...100`, or `nil` if unknown.

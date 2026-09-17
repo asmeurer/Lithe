@@ -80,11 +80,22 @@ struct StatusPresentationTests {
         #expect(p2.isEmpty)
     }
 
-    @Test func optimizedChargingSummary() {
+    @Test func chargeOnHoldSummary() {
         let p = StatusPresentation.make(
-            snapshot: snapshot([PowerSource(state: .charged, charge: 0.8, optimizedChargingEngaged: true)]),
+            snapshot: snapshot([PowerSource(state: .charged, charge: 0.8, chargeOnHold: true)]),
             settings: classicSettings)
         #expect(p.summaryLines == ["Charging on hold (80%)"])
+    }
+
+    @Test func chargedBelowFullKeepsThePercent() {
+        let p = StatusPresentation.make(
+            snapshot: snapshot([PowerSource(state: .charged, charge: 0.97, isCharged: true)]),
+            settings: classicSettings)
+        #expect(p.summaryLines == ["Charged (97%)"])
+        let full = StatusPresentation.make(
+            snapshot: snapshot([PowerSource(state: .charged, charge: 1.0, isCharged: false)]),
+            settings: classicSettings)
+        #expect(full.summaryLines == ["Fully charged"])
     }
 
     @Test func lowChargeUsesWarningColorForFillOutlineAndText() {

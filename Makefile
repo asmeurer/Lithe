@@ -25,9 +25,13 @@ all: build
 
 ## Regenerate Lithe.xcodeproj from project.yml (requires `brew install xcodegen`).
 ## The project file is generated and gitignored; edit project.yml instead.
-project: $(PROJECT)
+project:
+	xcodegen generate
 
-$(PROJECT): project.yml
+# Regenerated automatically when project.yml changes or when files are added
+# to or removed from the source directories (their mtimes change).
+SOURCE_DIRS := $(shell find Lithe LitheTests -type d -not -path '*/Assets.xcassets/*')
+$(PROJECT): project.yml $(SOURCE_DIRS)
 	xcodegen generate
 
 ## Debug build into build/DerivedData.
@@ -65,10 +69,11 @@ icon:
 	$(CLEAN_ENV) swift Scripts/make-icon.swift
 
 ## Install the git pre-commit hook (SwiftLint on staged Swift files).
+## Works in worktrees too, where .git is a file rather than a directory.
 hooks:
-	cp Scripts/pre-commit .git/hooks/pre-commit
-	chmod +x .git/hooks/pre-commit
-	@echo "Installed .git/hooks/pre-commit"
+	cp Scripts/pre-commit "$$(git rev-parse --git-path hooks)/pre-commit"
+	chmod +x "$$(git rev-parse --git-path hooks)/pre-commit"
+	@echo "Installed $$(git rev-parse --git-path hooks)/pre-commit"
 
 clean:
 	rm -rf build $(DIST) $(PROJECT)

@@ -21,8 +21,10 @@ final class Preferences: ObservableObject {
         settings = Self.load(from: defaults) ?? DisplaySettings()
     }
 
-    /// Restores the built-in defaults.
+    /// Restores the built-in defaults, discarding whatever is saved (even a
+    /// blob that could not be read).
     func resetToDefaults() {
+        defaults.removeObject(forKey: Self.settingsKey)
         settings = DisplaySettings()
     }
 
@@ -49,13 +51,19 @@ final class Preferences: ObservableObject {
 
     /// Imports SlimBatteryMonitor's preferences the first time Lithe runs, if
     /// they exist and Lithe has no saved settings of its own yet.
-    func importLegacySettingsIfNeeded() {
-        guard !defaults.bool(forKey: Self.legacyImportedKey) else { return }
+    ///
+    /// - Parameter legacy: The old app's defaults; read from its domain when
+    ///   not supplied (tests pass a dictionary).
+    /// - Returns: Whether anything was imported.
+    @discardableResult
+    func importLegacySettingsIfNeeded(legacy: [String: Any]? = nil) -> Bool {
+        guard !defaults.bool(forKey: Self.legacyImportedKey) else { return false }
         defaults.set(true, forKey: Self.legacyImportedKey)
-        guard defaults.data(forKey: Self.settingsKey) == nil,
-              let legacy = UserDefaults(suiteName: LegacyImport.domain)?.dictionaryRepresentation(),
-              LegacyImport.looksLikeSlimBatteryMonitor(legacy) else { return }
-        settings = LegacyImport.settings(from: legacy, base: settings)
+        guard defaults.data(forKey: Self.settingsKey) == nil else { return false }
+        let old = legacy ?? UserDefaults(suiteName: LegacyImport.domain)?.dictionaryRepresentation() ?? [:]
+        guard LegacyImport.looksLikeSlimBatteryMonitor(old) else { return false }
+        settings = LegacyImport.settings(from: old, base: settings)
         NSLog("Lithe: imported SlimBatteryMonitor preferences")
+        return true
     }
 }

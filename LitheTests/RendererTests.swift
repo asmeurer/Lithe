@@ -68,14 +68,14 @@ struct RendererTests {
         #expect(opaquePixels(rep, minimumAlpha: 0.15) > 0)
     }
 
-    @Test func composedImageCoversAllItems() {
+    @Test func composedImageCoversAllItems() throws {
         let icon = IconSpec(shape: .rectangular, level: 0.5, isPresent: true, fill: .automatic, outline: .automatic, textAbove: nil)
         let items = [
             ItemPresentation(icon: icon, text: "50%", textColor: .automatic),
             ItemPresentation(icon: icon, text: nil, textColor: .automatic),
             ItemPresentation(icon: nil, text: "1:23", textColor: .custom(.red)),
         ]
-        let image = try! #require(BatteryIconRenderer.composedImage(items: items))
+        let image = try #require(BatteryIconRenderer.composedImage(items: items))
         #expect(image.size.width > 3 * BatteryIconRenderer.iconSize(for: icon).width)
         #expect(opaquePixels(bitmap(image)) > 0)
         #expect(BatteryIconRenderer.composedImage(items: [ItemPresentation(icon: nil, text: nil, textColor: .automatic)]) == nil)

@@ -123,8 +123,8 @@ enum BatteryIconRenderer {
     /// Composes several sources (each an icon and/or text) into one image.
     /// Used when more than one power source is displayed, since a status item
     /// has only a single title.
-    static func composedImage(items: [ItemPresentation]) -> NSImage? {
-        let font = menuBarFont()
+    static func composedImage(items: [ItemPresentation], font: NSFont? = nil) -> NSImage? {
+        let font = font ?? menuBarFont()
         struct Part {
             var icon: IconSpec?
             var text: NSAttributedString?

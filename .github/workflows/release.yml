@@ -32,6 +32,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Check that the tag matches MARKETING_VERSION
+        run: |
+          VERSION=$(sed -n 's/^ *MARKETING_VERSION: *"\{0,1\}\([^"]*\)"\{0,1\}/\1/p' project.yml)
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match MARKETING_VERSION $VERSION in project.yml" >&2
+            exit 1
+          fi
+
       - name: Generate Xcode project
         run: |
           command -v xcodegen >/dev/null || brew install xcodegen
