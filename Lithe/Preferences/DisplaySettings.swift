@@ -176,6 +176,11 @@ struct DisplaySettings: Codable, Equatable, Sendable {
         lowColorEnabled = value(.lowColorEnabled, d.lowColorEnabled)
         lowColorPercent = value(.lowColorPercent, d.lowColorPercent)
         lowColor = value(.lowColor, d.lowColor)
+        if lowColor.isAutomatic {
+            // An automatic warning color is indistinguishable from the normal
+            // color, so older saved settings are migrated to the default.
+            lowColor = d.lowColor
+        }
         warningPanelEnabled = value(.warningPanelEnabled, d.warningPanelEnabled)
         warningPanelPercent = value(.warningPanelPercent, d.warningPanelPercent)
         warningSoundEnabled = value(.warningSoundEnabled, d.warningSoundEnabled)

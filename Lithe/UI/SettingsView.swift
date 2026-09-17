@@ -157,7 +157,7 @@ struct ColorSettingRow: View {
                     set: { setting = .custom(RGBA(color: $0)) }
                 ), supportsOpacity: false)
                 .labelsHidden()
-                .disabled(setting.isAutomatic)
+                .disabled(allowsAutomatic && setting.isAutomatic)
                 if allowsAutomatic {
                     Toggle("Automatic", isOn: Binding(
                         get: { setting.isAutomatic },

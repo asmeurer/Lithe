@@ -36,6 +36,11 @@ struct DisplaySettingsCodingTests {
         #expect(s.chargedMode == d.chargedMode)
         #expect(s.warningPanelPercent == d.warningPanelPercent)
         #expect(try JSONDecoder().decode(DisplaySettings.self, from: Data("{}".utf8)) == d)
+
+        // An "automatic" warning color from an older version is migrated.
+        let auto = try JSONDecoder().decode(DisplaySettings.self, from: Data(#"{"lowColor": {"automatic": {}}}"#.utf8))
+        #expect(auto.lowColor == d.lowColor)
+        #expect(!auto.lowColor.isAutomatic)
     }
 
     @Test func rgbaHexRoundTrip() throws {

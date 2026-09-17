@@ -21,7 +21,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var visibilityObservation: NSKeyValueObservation?
     private let weakSelf = WeakBox<StatusItemController>()
     private var changingVisibility = false
+    /// Re-arm gate: a warning was shown for the current discharge.
     private var warnedForThisDischarge = false
+    /// The low-battery panel was put up by `checkLowBattery` (as opposed to
+    /// the development flag) and has not been taken down by this code yet.
+    private var panelShownAutomatically = false
     private(set) var presentation = StatusPresentation(items: [], summaryLines: [])
 
     init(prefs: Preferences, loginItem: LoginItem, openPreferences: @escaping () -> Void) {
@@ -36,6 +40,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         statusItem.isVisible = true
         statusItem.menu = menu
         menu.delegate = self
+        // Enabled states are managed explicitly in menuNeedsUpdate; automatic
+        // validation would re-enable items whose target implements the action.
+        menu.autoenablesItems = false
         if let button = statusItem.button {
             button.imagePosition = .imageLeading
             button.imageHugsTitle = true
@@ -146,19 +153,28 @@ final class StatusItemController: NSObject, NSMenuDelegate {
               settings.warningPanelEnabled else {
             // Plugged in, no battery, or warnings turned off: take the panel
             // down if this code put it up, and re-arm for the next discharge.
-            if warnedForThisDischarge {
-                lowBatteryAlert.dismiss()
-            }
+            dismissAutomaticPanel()
             warnedForThisDischarge = false
             return
         }
         if percent < settings.warningPanelPercent {
             if !warnedForThisDischarge {
                 warnedForThisDischarge = true
+                panelShownAutomatically = true
                 lowBatteryAlert.show(percent: percent, minutes: battery.minutesToEmpty, playSound: settings.warningSoundEnabled)
             }
         } else if percent >= settings.warningPanelPercent + 5 {
+            // Comfortably above the threshold again (for example after the
+            // threshold was lowered): the warning no longer applies.
+            dismissAutomaticPanel()
             warnedForThisDischarge = false
+        }
+    }
+
+    private func dismissAutomaticPanel() {
+        if panelShownAutomatically {
+            lowBatteryAlert.dismiss()
+            panelShownAutomatically = false
         }
     }
 
