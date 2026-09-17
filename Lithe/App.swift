@@ -6,7 +6,11 @@ enum LitheMain {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
-        app.run()
+        // `NSApplication.delegate` is unretained; keep ours alive for the
+        // whole run loop rather than trusting the local's lifetime.
+        withExtendedLifetime(delegate) {
+            app.run()
+        }
     }
 }
 

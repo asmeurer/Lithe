@@ -4,6 +4,11 @@
 # A conda-activated shell exports its own toolchain through those variables,
 # which breaks the link step, so they are cleared before invoking xcodebuild.
 
+# Recipes are pipelines (xcodebuild | filter); pipefail keeps xcodebuild's
+# exit status so a failed build fails the make target.
+SHELL := /bin/bash
+.SHELLFLAGS := -o pipefail -c
+
 PROJECT   := Lithe.xcodeproj
 SCHEME    := Lithe
 DERIVED   := build/DerivedData
@@ -70,4 +75,5 @@ clean:
 
 # Keep xcodebuild's output readable: show errors, warnings from our sources,
 # test results and the final status line.
-FILTER := grep -E --line-buffered 'error:|warning: .*/Lithe/|Test (Case|Suite)|passed|failed|BUILD|TEST|Executed' | grep -v -E 'DVT|CoreSimulator|plug-in|Symbol not found|CoreDevice' || true
+# The greps are wrapped so that "no matching lines" is not itself an error.
+FILTER := { grep -E --line-buffered 'error:|warning: .*/Lithe/|Test (Case|Suite)|passed|failed|BUILD|TEST|Executed' || true; } | { grep -v -E 'DVT|CoreSimulator|plug-in|Symbol not found|CoreDevice' || true; }
