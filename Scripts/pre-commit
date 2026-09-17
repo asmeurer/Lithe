@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Pre-commit hook for Lithe: lint staged Swift with SwiftLint.
+# Blocks the commit only on error-severity violations (warnings are advisory).
+# Configured by .swiftlint.yml. Set SKIP_SWIFTLINT=1 to bypass.
+# Installed into .git/hooks by `make hooks`.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+if [ "${SKIP_SWIFTLINT:-0}" = "1" ]; then
+    exit 0
+fi
+
+# Only run when Swift sources are staged.
+if ! git diff --cached --name-only --diff-filter=ACM | grep -q '\.swift$'; then
+    exit 0
+fi
+
+if ! command -v swiftlint >/dev/null 2>&1; then
+    echo "pre-commit: swiftlint not installed; skipping (install with: brew install swiftlint)"
+    exit 0
+fi
+
+echo "pre-commit: running swiftlint…"
+# SwiftLint exits non-zero when there are error-severity violations.
+if ! swiftlint lint --quiet; then
+    echo
+    echo "pre-commit: SwiftLint found error-severity violations (above). Fix them, or"
+    echo "commit with 'SKIP_SWIFTLINT=1 git commit …' to bypass."
+    exit 1
+fi
+echo "pre-commit: swiftlint passed."

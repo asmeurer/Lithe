@@ -1,0 +1,100 @@
+name: Release
+
+# Builds a universal Lithe.app and attaches it to the GitHub release for a
+# pushed tag such as v1.0.0.
+#
+# Without secrets the app is ad-hoc signed: users have to allow it once in
+# System Settings > Privacy & Security. To ship a Developer ID signed and
+# notarized build instead, add these repository secrets:
+#   DEVELOPER_ID_CERT_P12_BASE64  base64 of the .p12 export of the certificate
+#   DEVELOPER_ID_CERT_PASSWORD    password of that .p12
+#   DEVELOPER_ID_IDENTITY         e.g. "Developer ID Application: Name (TEAMID)"
+#   NOTARY_APPLE_ID, NOTARY_TEAM_ID, NOTARY_PASSWORD (an app-specific password)
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      # The `secrets` context cannot be used in a step's `if`, so the
+      # presence checks are computed here at the job level.
+      HAS_CERT: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 != '' }}
+      HAS_NOTARY: ${{ secrets.NOTARY_APPLE_ID != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Generate Xcode project
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen generate
+
+      - name: Import Developer ID certificate
+        if: ${{ env.HAS_CERT == 'true' }}
+        env:
+          CERT: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          echo "SIGNED=1" >> "$GITHUB_ENV"
+
+      - name: Build universal Release
+        env:
+          IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
+        run: |
+          set -o pipefail
+          if [ -n "$SIGNED" ]; then
+            SIGN_ARGS=(CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$IDENTITY" OTHER_CODE_SIGN_FLAGS=--timestamp)
+          else
+            SIGN_ARGS=(CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO)
+          fi
+          xcodebuild build \
+            -project Lithe.xcodeproj -scheme Lithe -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build/DerivedData \
+            "${SIGN_ARGS[@]}" | xcbeautify --renderer github-actions
+          APP=build/DerivedData/Build/Products/Release/Lithe.app
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
+          lipo -archs "$APP/Contents/MacOS/Lithe"
+          mkdir -p dist
+          ditto -c -k --keepParent "$APP" "dist/Lithe-${GITHUB_REF_NAME#v}.zip"
+
+      - name: Notarize
+        if: ${{ env.SIGNED == '1' && env.HAS_NOTARY == 'true' }}
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          ZIP="dist/Lithe-${GITHUB_REF_NAME#v}.zip"
+          xcrun notarytool submit "$ZIP" --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD" --wait --timeout 30m
+          APP=build/DerivedData/Build/Products/Release/Lithe.app
+          xcrun stapler staple "$APP"
+          rm -f "$ZIP"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.zip --title "Lithe $GITHUB_REF_NAME" --generate-notes --verify-tag
+
+      - name: Remove signing keychain
+        if: ${{ always() && env.SIGNED == '1' }}
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db"

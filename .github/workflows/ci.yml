@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # Pin the Xcode used on the runner; macos-26 images ship several versions.
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Generate Xcode project
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen generate
+      - name: Test (Debug)
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Lithe.xcodeproj -scheme Lithe -configuration Debug \
+            -destination 'platform=macOS' -derivedDataPath build/DerivedData \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions
+      - name: Build universal Release
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Lithe.xcodeproj -scheme Lithe -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
+            | xcbeautify --renderer github-actions
+          lipo -archs build/DerivedData/Build/Products/Release/Lithe.app/Contents/MacOS/Lithe
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: TestResults.xcresult
+          path: TestResults.xcresult
+
+  lint:
+    name: SwiftLint
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install SwiftLint
+        run: command -v swiftlint >/dev/null || brew install swiftlint
+      - name: Lint
+        run: swiftlint lint --strict --reporter github-actions-logging
