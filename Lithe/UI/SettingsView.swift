@@ -270,13 +270,17 @@ extension RGBA {
     }
 
     /// The label color as currently resolved for the app's appearance, so a
-    /// color that starts out as "custom" is at least visible.
+    /// color that starts out as "custom" is at least visible. The label color
+    /// is slightly translucent; the result is made opaque because the color
+    /// picker does not offer opacity.
     @MainActor
     static var currentLabel: RGBA {
         var resolved = NSColor.labelColor
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
             resolved = NSColor.labelColor.usingColorSpace(.sRGB) ?? .black
         }
-        return RGBA(nsColor: resolved)
+        var rgba = RGBA(nsColor: resolved)
+        rgba.alpha = 1
+        return rgba
     }
 }

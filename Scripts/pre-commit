@@ -10,8 +10,10 @@ if [ "${SKIP_SWIFTLINT:-0}" = "1" ]; then
     exit 0
 fi
 
-# Only run when Swift sources are staged.
-if ! git diff --cached --name-only --diff-filter=ACM | grep -q '\.swift$'; then
+# Only run when Swift sources in the linted directories (see `included:` in
+# .swiftlint.yml) are staged. Explicit paths bypass that list, so filter here.
+LINTED='^\(Lithe\|LitheTests\)/.*\.swift$'
+if ! git diff --cached --name-only --diff-filter=ACM | grep -q "$LINTED"; then
     exit 0
 fi
 
@@ -22,7 +24,7 @@ fi
 
 echo "pre-commit: running swiftlint on staged Swift files…"
 # SwiftLint exits non-zero when there are error-severity violations.
-if ! git diff --cached --name-only --diff-filter=ACM -z | grep -z '\.swift$' | xargs -0 swiftlint lint --quiet --; then
+if ! git diff --cached --name-only --diff-filter=ACM -z | grep -z "$LINTED" | xargs -0 swiftlint lint --quiet --; then
     echo
     echo "pre-commit: SwiftLint found error-severity violations (above). Fix them, or"
     echo "commit with 'SKIP_SWIFTLINT=1 git commit …' to bypass."

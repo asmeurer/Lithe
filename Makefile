@@ -29,7 +29,8 @@ project:
 	xcodegen generate
 
 # Regenerated automatically when project.yml changes or when files are added
-# to or removed from the source directories (their mtimes change).
+# to or removed from the source directories (their mtimes change). Directory
+# names under Lithe/ and LitheTests/ must not contain spaces for this to work.
 SOURCE_DIRS := $(shell find Lithe LitheTests -type d -not -path '*/Assets.xcassets/*')
 $(PROJECT): project.yml $(SOURCE_DIRS)
 	xcodegen generate
