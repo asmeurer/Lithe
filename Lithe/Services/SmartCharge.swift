@@ -23,8 +23,10 @@ final class SmartCharge {
         /// Whether the system allows a "charge to full" override right now.
         var overrideAllowed: Bool
 
-        /// True when either mechanism is holding the charge below full.
-        var isHolding: Bool { optimizedChargingEngaged || (chargeLimitEnabled && chargeLimit < 100) }
+        /// Whether either mechanism is configured to hold the charge. Whether
+        /// it is holding right now also depends on being plugged in; see the
+        /// power snapshot for that.
+        var canHold: Bool { optimizedChargingEngaged || (chargeLimitEnabled && chargeLimit < 100) }
     }
 
     enum Failure: LocalizedError {
@@ -84,8 +86,15 @@ final class SmartCharge {
         }
         error = nil
         let mclEnabled = client.isMCLCurrentlyEnabled(&error) != 0
-        error = nil
+        if let error {
+            NSLog("Lithe: charge limit state query failed: \(error.localizedDescription)")
+            return nil
+        }
         let mclLimit = Int(client.getMCLLimit(&error))
+        if let error {
+            NSLog("Lithe: charge limit query failed: \(error.localizedDescription)")
+            return nil
+        }
         return State(
             optimizedChargingEngaged: engaged.boolValue,
             chargeLimitEnabled: mclEnabled,
@@ -101,7 +110,10 @@ final class SmartCharge {
         guard let client else { throw Failure.unavailable }
         var error: NSError?
         let limited = client.isMCLCurrentlyEnabled(&error) != 0
-        error = nil
+        if let error {
+            NSLog("Lithe: charge limit state query failed: \(error.localizedDescription)")
+            throw Failure.rejected(error)
+        }
         let ok = limited ? client.temporarilyDisableMCL(&error) : client.temporarilyEnableCharging(&error)
         guard ok else {
             NSLog("Lithe: charge to full request failed: \(error?.localizedDescription ?? "unknown error")")

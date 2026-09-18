@@ -13,6 +13,7 @@ struct SmartChargeTests {
         var mclEnabled: UInt = 0
         var mclLimit: UInt8 = 100
         var queryFails = false
+        var limitQueryFails = false
         var actionFails = false
         var calls: [String] = []
 
@@ -30,8 +31,14 @@ struct SmartChargeTests {
             chargingOverrideAllowed.pointee = ObjCBool(override)
             return true
         }
-        func isMCLCurrentlyEnabled(_ error: NSErrorPointer) -> UInt { mclEnabled }
-        func getMCLLimit(_ error: NSErrorPointer) -> UInt8 { mclLimit }
+        func isMCLCurrentlyEnabled(_ error: NSErrorPointer) -> UInt {
+            if limitQueryFails { error?.pointee = NSError(domain: "Test", code: 3) }
+            return mclEnabled
+        }
+        func getMCLLimit(_ error: NSErrorPointer) -> UInt8 {
+            if limitQueryFails { error?.pointee = NSError(domain: "Test", code: 4) }
+            return mclLimit
+        }
         func temporarilyEnableCharging(_ error: NSErrorPointer) -> Bool {
             calls.append("enableCharging")
             if actionFails { error?.pointee = NSError(domain: "Test", code: 2, userInfo: [NSLocalizedDescriptionKey: "nope"]) }
@@ -50,7 +57,7 @@ struct SmartChargeTests {
         fake.override = true
         let state = SmartCharge(client: fake).state()
         #expect(state == SmartCharge.State(optimizedChargingEngaged: true, chargeLimitEnabled: false, chargeLimit: 100, overrideAllowed: true))
-        #expect(state?.isHolding == true)
+        #expect(state?.canHold == true)
     }
 
     @Test func reportsChargeLimit() {
@@ -60,12 +67,12 @@ struct SmartChargeTests {
         let state = SmartCharge(client: fake).state()
         #expect(state?.chargeLimitEnabled == true)
         #expect(state?.chargeLimit == 80)
-        #expect(state?.isHolding == true)
+        #expect(state?.canHold == true)
     }
 
-    @Test func idleStateIsNotHolding() {
+    @Test func idleStateCannotHold() {
         let state = SmartCharge(client: FakeClient()).state()
-        #expect(state?.isHolding == false)
+        #expect(state?.canHold == false)
         #expect(state?.overrideAllowed == false)
     }
 
@@ -75,6 +82,12 @@ struct SmartChargeTests {
         #expect(SmartCharge(client: fake).state() == nil)
         #expect(SmartCharge(client: nil).state() == nil)
         #expect(!SmartCharge(client: nil).isAvailable)
+
+        // A failed charge-limit lookup must not yield a bogus limit.
+        let limitFails = FakeClient()
+        limitFails.limitQueryFails = true
+        limitFails.mclLimit = 0
+        #expect(SmartCharge(client: limitFails).state() == nil)
     }
 
     @Test func chargeToFullLiftsTheLimitOrOverridesOptimizedCharging() throws {
@@ -95,6 +108,12 @@ struct SmartChargeTests {
         failing.actionFails = true
         #expect(throws: SmartCharge.Failure.self) { try SmartCharge(client: failing).chargeToFullNow() }
         #expect(throws: SmartCharge.Failure.self) { try SmartCharge(client: nil).chargeToFullNow() }
+
+        // If the limit state cannot be read, do not guess which override to use.
+        let unknown = FakeClient()
+        unknown.limitQueryFails = true
+        #expect(throws: SmartCharge.Failure.self) { try SmartCharge(client: unknown).chargeToFullNow() }
+        #expect(unknown.calls.isEmpty)
     }
 
     /// On a real Mac the private client should load; this only checks that

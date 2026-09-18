@@ -282,12 +282,17 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         return lines
     }
 
-    /// The charge-hold state when the charge is being held (per the system or
-    /// per the snapshot), otherwise `nil`.
+    /// The charge-hold state while the charge is actually being held: an
+    /// internal battery on external power, not charging, below full, and
+    /// either the charger or the smart-charging service says a hold is in
+    /// effect. Otherwise `nil`.
     private func chargeHoldState(_ state: SmartCharge.State?) -> SmartCharge.State? {
         guard let state else { return nil }
-        let onHold = monitor.snapshot.sources.contains { $0.isPresent && $0.chargeOnHold }
-        return (state.isHolding || onHold) ? state : nil
+        let held = monitor.snapshot.sources.contains { source in
+            source.isPresent && source.kind == .internalBattery && source.state == .charged
+                && (source.percent ?? 100) < 100 && (source.chargeOnHold || state.canHold)
+        }
+        return held ? state : nil
     }
 
     private static func adapterWatts() -> Int? {
