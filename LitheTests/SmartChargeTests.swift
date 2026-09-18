@@ -13,6 +13,7 @@ struct SmartChargeTests {
         var mclEnabled: UInt = 0
         var mclLimit: UInt8 = 100
         var queryFails = false
+        var enabledQueryFails = false
         var limitQueryFails = false
         var actionFails = false
         var calls: [String] = []
@@ -32,7 +33,7 @@ struct SmartChargeTests {
             return true
         }
         func isMCLCurrentlyEnabled(_ error: NSErrorPointer) -> UInt {
-            if limitQueryFails { error?.pointee = NSError(domain: "Test", code: 3) }
+            if enabledQueryFails { error?.pointee = NSError(domain: "Test", code: 3) }
             return mclEnabled
         }
         func getMCLLimit(_ error: NSErrorPointer) -> UInt8 {
@@ -83,8 +84,13 @@ struct SmartChargeTests {
         #expect(SmartCharge(client: nil).state() == nil)
         #expect(!SmartCharge(client: nil).isAvailable)
 
-        // A failed charge-limit lookup must not yield a bogus limit.
+        // A failed charge-limit lookup must not yield a bogus limit, whether
+        // the enabled-state query or the limit query is the one that fails.
+        let enabledFails = FakeClient()
+        enabledFails.enabledQueryFails = true
+        #expect(SmartCharge(client: enabledFails).state() == nil)
         let limitFails = FakeClient()
+        limitFails.mclEnabled = 1
         limitFails.limitQueryFails = true
         limitFails.mclLimit = 0
         #expect(SmartCharge(client: limitFails).state() == nil)
@@ -111,7 +117,7 @@ struct SmartChargeTests {
 
         // If the limit state cannot be read, do not guess which override to use.
         let unknown = FakeClient()
-        unknown.limitQueryFails = true
+        unknown.enabledQueryFails = true
         #expect(throws: SmartCharge.Failure.self) { try SmartCharge(client: unknown).chargeToFullNow() }
         #expect(unknown.calls.isEmpty)
     }
