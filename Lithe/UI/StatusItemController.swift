@@ -183,13 +183,28 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
+        // One query per menu open; it is a synchronous XPC call.
+        let hold = SmartCharge.shared.state()
+
         for line in presentation.summaryLines {
             menu.addItem(disabled(line))
         }
-        for line in detailLines() {
+        for line in detailLines(hold: hold) {
             menu.addItem(disabled(line))
         }
         menu.addItem(.separator())
+
+        if let hold = chargeHoldState(hold) {
+            // The same action as the system battery menu's "Charge to Full Now".
+            let charge = NSMenuItem(title: "Charge to Full Now", action: #selector(chargeToFullNow), keyEquivalent: "")
+            charge.target = self
+            charge.isEnabled = hold.overrideAllowed
+            if !hold.overrideAllowed {
+                charge.toolTip = "The system is not allowing a charging override right now."
+            }
+            menu.addItem(charge)
+            menu.addItem(.separator())
+        }
 
         let preferences = NSMenuItem(title: "Preferences…", action: #selector(openPreferencesAction), keyEquivalent: ",")
         preferences.target = self
@@ -240,7 +255,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     /// Battery health and power details shown under the status line.
-    private func detailLines() -> [String] {
+    private func detailLines(hold: SmartCharge.State?) -> [String] {
         var lines: [String] = []
         let snapshot = monitor.snapshot
         let hasBattery = snapshot.sources.contains { $0.isPresent && $0.kind == .internalBattery }
@@ -261,7 +276,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if let adapter = Self.adapterWatts() {
             lines.append("Power adapter: \(adapter) W")
         }
+        if let hold, hold.chargeLimitEnabled, hold.chargeLimit < 100 {
+            lines.append("Charge limit: \(hold.chargeLimit)%")
+        }
         return lines
+    }
+
+    /// The charge-hold state when the charge is being held (per the system or
+    /// per the snapshot), otherwise `nil`.
+    private func chargeHoldState(_ state: SmartCharge.State?) -> SmartCharge.State? {
+        guard let state else { return nil }
+        let onHold = monitor.snapshot.sources.contains { $0.isPresent && $0.chargeOnHold }
+        return (state.isHolding || onHold) ? state : nil
     }
 
     private static func adapterWatts() -> Int? {
@@ -278,6 +304,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func openBatterySettings() {
         SystemSettings.openBattery()
+    }
+
+    @objc private func chargeToFullNow() {
+        do {
+            try SmartCharge.shared.chargeToFullNow()
+            // Charging resumes within a few seconds; IOKit will notify.
+        } catch {
+            NSApp.activate()
+            let alert = NSAlert()
+            alert.messageText = "Could not start charging to full"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 
     @objc private func toggleLaunchAtLogin() {

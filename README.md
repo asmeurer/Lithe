@@ -35,7 +35,10 @@ you want, in the space you want, and nothing else.
 - **Low-battery warning panel** with a sound when the charge drops below your
   threshold, in addition to the color change.
 - **Useful menu:** the current state and estimate in words, cycle count,
-  maximum capacity, power adapter wattage, and Low Power Mode.
+  maximum capacity, power adapter wattage, and Low Power Mode. While
+  Optimized Battery Charging or the charge limit is holding the charge, the
+  menu says so and offers **Charge to Full Now**, just like the system
+  battery menu.
 - **Removed batteries, multiple batteries, and UPS units** are handled like the
   original: show a gray outline for a missing battery, treat a connected UPS as
   a battery, and reverse the order if it does not match your hardware.
@@ -111,7 +114,9 @@ make project    # Regenerate Lithe.xcodeproj from project.yml (then open it in X
 Lithe reads the same IOKit power source information that the system battery
 menu uses (`IOPSCopyPowerSourcesInfo`) and is notified by IOKit whenever the
 charge, state, or time estimate changes. Battery health details come from the
-`AppleSmartBattery` entry in the I/O Registry. The menu bar image is drawn on
+`AppleSmartBattery` entry in the I/O Registry. "Charge to Full Now" has no
+public API; Lithe calls the same private PowerUI client that Control Center
+uses, loaded at runtime and hidden if it is ever missing. The menu bar image is drawn on
 the fly with AppKit, so it is crisp at any scale and automatic colors resolve
 against the actual menu bar appearance. The preferences window is SwiftUI.
 

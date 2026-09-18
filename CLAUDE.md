@@ -44,6 +44,10 @@ make clean      # Remove build/, dist/ and the generated project
   cycle count and capacity health.
 - **SMAppService.mainApp** for launch at login. The toggle always reflects
   `SMAppService.mainApp.status`; the app never registers itself automatically.
+- **Private API, one place only:** `SmartCharge` mirrors Control Center's
+  "Charge to Full Now" (`temporarilyEnableCharging:` for Optimized Battery
+  Charging, `temporarilyDisableMCL:` for the charge limit). Keep private API use
+  confined to that file and fail soft.
 - Preferences are one `Codable` struct (`DisplaySettings`) stored as JSON in
   `UserDefaults` under `DisplaySettings`. SlimBatteryMonitor's preferences
   (`org.orange-carb.SlimBatteryMonitor`) are imported once on first launch.
@@ -64,6 +68,9 @@ make clean      # Remove build/, dist/ and the generated project
 - `Lithe/UI/SettingsView.swift` - the SwiftUI preferences UI
 - `Lithe/UI/LowBatteryAlert.swift` - the floating low-battery panel
 - `Lithe/Services/LoginItem.swift` - `SMAppService` wrapper
+- `Lithe/Services/SmartCharge.swift` - "Charge to Full Now" via the private PowerUI
+  `PowerUISmartChargeClient` (the class Control Center uses); loaded with `dlopen`,
+  every selector checked, feature hidden if unavailable
 - `LitheTests/` - Swift Testing suites; the parser, presentation, settings and
   renderer are pure and tested against fixtures (a real IOKit dictionary and a
   real SlimBatteryMonitor defaults export live in the tests)

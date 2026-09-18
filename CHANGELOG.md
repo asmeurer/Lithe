@@ -2,6 +2,12 @@
 
 All notable changes to Lithe will be documented in this file.
 
+## [0.2.0] - 2026-09-18
+
+- Add a "Charge to Full Now" menu item while Optimized Battery Charging or the
+  charge limit is holding the charge, doing what the system battery menu does
+- Show the configured charge limit in the menu when one is set
+
 ## [0.1.0] - 2026-09-18
 
 Initial release.

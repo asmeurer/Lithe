@@ -15,6 +15,9 @@ opt_in_rules:
 identifier_name:
   min_length: 1
   max_length: 50
+file_length:
+  warning: 500
+  error: 800
 type_body_length:
   warning: 400
   error: 600
